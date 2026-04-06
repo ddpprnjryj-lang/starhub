@@ -1,33 +1,76 @@
+-- LOAD GUARD + AUTO EXECUTE
+if getgenv().StarHubLoaded then return end
+getgenv().StarHubLoaded = true
+
+queue_on_teleport('loadstring(game:HttpGet("YOUR_LINK_HERE"))()')
+
 local player = game.Players.LocalPlayer
-local TeleportService = game:GetService("TeleportService")
-local HttpService = game:GetService("HttpService")
 local UIS = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 local PlaceID = game.PlaceId
 
-getgenv().AutoSteal = false
-getgenv().AutoFarm = false
-getgenv().AutoServerScan = false
+-- SETTINGS FILE
+local fileName = "StarHubSettings.json"
+local Settings = {
+    AutoSteal = false,
+    AutoFarm = false,
+    AutoServerScan = false
+}
+
+-- LOAD SETTINGS
+pcall(function()
+    if readfile(fileName) then
+        Settings = HttpService:JSONDecode(readfile(fileName))
+    end
+end)
+
+-- SAVE SETTINGS
+function saveSettings()
+    writefile(fileName, HttpService:JSONEncode(Settings))
+end
 
 -- GUI
 local ScreenGui = Instance.new("ScreenGui", game.CoreGui)
 local Frame = Instance.new("Frame", ScreenGui)
-Frame.Size = UDim2.new(0,300,0,250)
+Frame.Size = UDim2.new(0,300,0,260)
 Frame.Position = UDim2.new(0.3,0,0.3,0)
-Frame.BackgroundColor3 = Color3.fromRGB(30,30,30)
-Frame.Visible = false
+Frame.BackgroundColor3 = Color3.fromRGB(25,25,25)
+Frame.Active = true
+Frame.Draggable = true
+Frame.Visible = true
 
-local function makeButton(text, posY, callback)
+local UIListLayout = Instance.new("UIListLayout", Frame)
+
+local function createToggle(name, settingKey)
     local btn = Instance.new("TextButton", Frame)
-    btn.Size = UDim2.new(0,200,0,40)
-    btn.Position = UDim2.new(0,50,0,posY)
-    btn.Text = text
+    btn.Size = UDim2.new(1,0,0,40)
+
+    local function updateText()
+        btn.Text = name .. ": " .. (Settings[settingKey] and "ON" or "OFF")
+    end
+
+    updateText()
+
+    btn.MouseButton1Click:Connect(function()
+        Settings[settingKey] = not Settings[settingKey]
+        updateText()
+        saveSettings()
+    end)
+end
+
+local function createButton(name, callback)
+    local btn = Instance.new("TextButton", Frame)
+    btn.Size = UDim2.new(1,0,0,40)
+    btn.Text = name
     btn.MouseButton1Click:Connect(callback)
 end
 
--- VALUE READER
+-- VALUE PARSER
 function parseValue(text)
     local num = tonumber(string.match(text, "%d+"))
     if not num then return 0 end
+
     if string.find(text, "B") then
         return num * 1000000000
     elseif string.find(text, "M") then
@@ -42,7 +85,7 @@ end
 -- AUTO STEAL
 task.spawn(function()
     while task.wait(0.2) do
-        if getgenv().AutoSteal then
+        if Settings.AutoSteal then
             for _,v in pairs(player.PlayerGui:GetDescendants()) do
                 if v:IsA("TextButton") and string.lower(v.Text) == "steal" then
                     v:Activate()
@@ -52,10 +95,10 @@ task.spawn(function()
     end
 end)
 
--- AUTO FARM (walk to brainrot)
+-- AUTO FARM
 task.spawn(function()
     while task.wait(2) do
-        if getgenv().AutoFarm then
+        if Settings.AutoFarm then
             for _,gui in pairs(workspace:GetDescendants()) do
                 if gui:IsA("BillboardGui") then
                     local part = gui.Parent
@@ -69,15 +112,14 @@ task.spawn(function()
     end
 end)
 
--- CHECK RICH SERVER
-function serverHasRichBrainrot()
+-- SERVER CHECK
+function hasRich()
     for _,gui in pairs(workspace:GetDescendants()) do
         if gui:IsA("BillboardGui") then
             for _,v in pairs(gui:GetDescendants()) do
                 if v:IsA("TextLabel") and string.find(v.Text, "/sec") then
-                    local value = parseValue(v.Text)
-                    if value >= 250000000 then
-                        return true, v.Text
+                    if parseValue(v.Text) >= 250000000 then
+                        return true
                     end
                 end
             end
@@ -87,7 +129,7 @@ function serverHasRichBrainrot()
 end
 
 -- SERVER HOP
-function serverHop()
+function hop()
     local servers = HttpService:JSONDecode(
         game:HttpGet("https://games.roblox.com/v1/games/"..PlaceID.."/servers/Public?sortOrder=Desc&limit=100")
     )
@@ -101,42 +143,29 @@ end
 -- AUTO SERVER SCAN
 task.spawn(function()
     while task.wait(5) do
-        if getgenv().AutoServerScan then
-            local rich, value = serverHasRichBrainrot()
-            if rich then
-                print("Rich server found:", value)
-                getgenv().AutoServerScan = false
+        if Settings.AutoServerScan then
+            if hasRich() then
+                Settings.AutoServerScan = false
+                saveSettings()
             else
-                print("Hopping server...")
-                serverHop()
+                hop()
                 task.wait(10)
             end
         end
     end
 end)
 
--- BUTTONS
-makeButton("Auto Steal", 20, function()
-    getgenv().AutoSteal = not getgenv().AutoSteal
-end)
+-- UI
+createToggle("Auto Steal", "AutoSteal")
+createToggle("Auto Farm", "AutoFarm")
+createToggle("Auto Server Scan", "AutoServerScan")
 
-makeButton("Auto Farm", 70, function()
-    getgenv().AutoFarm = not getgenv().AutoFarm
-end)
-
-makeButton("Auto Server Scan", 120, function()
-    getgenv().AutoServerScan = not getgenv().AutoServerScan
-end)
-
-makeButton("Server Hop", 170, function()
-    serverHop()
-end)
-
-makeButton("Rejoin", 210, function()
+createButton("Server Hop", hop)
+createButton("Rejoin", function()
     TeleportService:Teleport(PlaceID, player)
 end)
 
--- OPEN/CLOSE MENU WITH X
+-- TOGGLE MENU (X)
 UIS.InputBegan:Connect(function(key)
     if key.KeyCode == Enum.KeyCode.X then
         Frame.Visible = not Frame.Visible
